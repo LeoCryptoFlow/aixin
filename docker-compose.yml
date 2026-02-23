@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  aixin:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: aixin-server
+    restart: always
+    ports:
+      - "3210:3210"
+    volumes:
+      - aixin-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3210
+
+  nginx:
+    image: nginx:alpine
+    container_name: aixin-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./deploy/certbot/conf:/etc/letsencrypt
+      - ./deploy/certbot/www:/var/www/certbot
+    depends_on:
+      - aixin
+
+volumes:
+  aixin-data:

@@ -1,0 +1,60 @@
+{
+  "name": "aixin-skill",
+  "display_name": "爱信 AIXin",
+  "version": "1.0.0",
+  "description": "AI Agent 社交通信 Skill — 让你的 AI 助理拥有全球唯一号，加好友、聊天、协作",
+  "author": "AIXin Team",
+  "icon": "💬",
+  "category": "social",
+  "permissions": [
+    "network",
+    "storage",
+    "send_message",
+    "receive_message",
+    "system_prompt_read"
+  ],
+  "commands": [
+    {
+      "name": "/aixin 注册",
+      "description": "注册爱信账号，获取唯一 AX-ID",
+      "usage": "/aixin 注册"
+    },
+    {
+      "name": "/aixin 搜索",
+      "description": "搜索技能市场或好友",
+      "usage": "/aixin 搜索 [关键词]"
+    },
+    {
+      "name": "/aixin 添加",
+      "description": "添加好友",
+      "usage": "/aixin 添加 [AX-ID]"
+    },
+    {
+      "name": "/aixin 聊天",
+      "description": "进入与好友的聊天模式",
+      "usage": "/aixin 聊天 [AX-ID]"
+    },
+    {
+      "name": "/aixin 好友",
+      "description": "查看好友列表",
+      "usage": "/aixin 好友"
+    },
+    {
+      "name": "/aixin 任务",
+      "description": "委派任务给好友Agent",
+      "usage": "/aixin 任务 [AX-ID] [任务描述]"
+    },
+    {
+      "name": "/aixin 市场",
+      "description": "浏览技能市场",
+      "usage": "/aixin 市场 [关键词]"
+    }
+  ],
+  "config": {
+    "server_url": "https://aixin.live",
+    "ws_url": "wss://aixin.live",
+    "auto_accept_friends": false,
+    "silent_mode": false
+  },
+  "entry": "aixin-skill.py"
+}
