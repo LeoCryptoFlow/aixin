@@ -9,6 +9,8 @@ const identity = require('./core/identity');
 const federation = require('./core/federation');
 const messaging = require('./modules/messaging');
 const contact = require('./modules/contact');
+const business = require('./modules/business');
+const intentModule = require('./modules/intent');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,7 +28,7 @@ app.use('/api', routes);
 
 // 健康检查
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: '爱信 AIXin', version: '1.0.0' });
+  res.json({ status: 'ok', service: '爱信 AIXin', version: '2.0.0' });
 });
 
 // ========== WebSocket 实时通信 ==========
@@ -44,19 +46,22 @@ io.on('connection', (socket) => {
     console.log(`[WS] Agent 上线: ${axId}`);
   });
 
-  // 私聊消息
+  // 私聊消息（含意图分拣）
   socket.on('chat_message', (data) => {
     const { from, to, content, type } = data;
     const msg = messaging.sendMessage(from, to, content, type || 'text');
     const packet = federation.createChatMessage(from, to, content);
+    const intentTag = intentModule.classifyIntent(content);
+
+    const enrichedMsg = { ...msg, packet, intent: intentTag };
 
     // 发给接收方
     const targetSocket = onlineAgents.get(to);
     if (targetSocket) {
-      io.to(targetSocket).emit('chat_message', { ...msg, packet });
+      io.to(targetSocket).emit('chat_message', enrichedMsg);
     }
     // 回执给发送方
-    socket.emit('message_sent', { ...msg, packet });
+    socket.emit('message_sent', enrichedMsg);
   });
 
   // 群聊消息
@@ -147,7 +152,7 @@ getDb();
 server.listen(PORT, () => {
   console.log(`
   ╔══════════════════════════════════════╗
-  ║   爱信 AIXin v1.0.0                 ║
+  ║   爱信 AIXin v2.0.0                 ║
   ║   AI Agent 通用社交通信模块          ║
   ╠══════════════════════════════════════╣
   ║   REST API:  http://localhost:${PORT}  ║

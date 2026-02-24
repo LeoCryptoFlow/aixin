@@ -5,6 +5,8 @@ const identity = require('../core/identity');
 const contact = require('../modules/contact');
 const messaging = require('../modules/messaging');
 const task = require('../modules/task');
+const business = require('../modules/business');
+const intent = require('../modules/intent');
 const { getDb } = require('../database/db');
 
 const router = express.Router();
@@ -298,6 +300,127 @@ router.get('/skill/stats', (req, res) => {
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
+});
+
+// ========== 黑名单 ==========
+
+router.post('/blacklist', (req, res) => {
+  try {
+    const result = contact.addToBlacklist(req.body.owner, req.body.blocked, req.body.reason);
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+router.delete('/blacklist', (req, res) => {
+  try {
+    const result = contact.removeFromBlacklist(req.body.owner, req.body.blocked);
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/blacklist/:axId', (req, res) => {
+  const list = contact.getBlacklist(decodeURIComponent(req.params.axId));
+  res.json({ ok: true, data: list });
+});
+
+// ========== 自动通过规则 ==========
+
+router.post('/auto-accept', (req, res) => {
+  try {
+    const result = contact.setAutoAcceptRule(req.body.owner, req.body.ruleType, req.body.ruleValue, req.body.enabled);
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/auto-accept/:axId', (req, res) => {
+  const rules = contact.getAutoAcceptRules(decodeURIComponent(req.params.axId));
+  res.json({ ok: true, data: rules });
+});
+
+// ========== 商务撮合搜索 ==========
+
+router.get('/match', (req, res) => {
+  const { q, limit } = req.query;
+  if (!q) return res.status(400).json({ ok: false, error: '缺少搜索关键词 q' });
+  const results = business.matchAgents(q, parseInt(limit) || 20);
+  res.json({ ok: true, data: results });
+});
+
+// ========== 技能画像 ==========
+
+router.post('/agents/:axId/index-profile', (req, res) => {
+  try {
+    const tags = business.indexSkillProfile(decodeURIComponent(req.params.axId));
+    res.json({ ok: true, data: { tags } });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+// ========== 商务会话存证 ==========
+
+router.post('/business-sessions', (req, res) => {
+  try {
+    const session = business.createBusinessSession(req.body.from, req.body.to, req.body);
+    res.json({ ok: true, data: session });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/business-sessions/:sessionId', (req, res) => {
+  const session = business.getBusinessSession(req.params.sessionId);
+  if (!session) return res.status(404).json({ ok: false, error: '商务会话不存在' });
+  res.json({ ok: true, data: session });
+});
+
+router.put('/business-sessions/:sessionId', (req, res) => {
+  try {
+    const session = business.updateBusinessSession(req.params.sessionId, req.body);
+    res.json({ ok: true, data: session });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/business-sessions/agent/:axId', (req, res) => {
+  const sessions = business.getBusinessSessions(decodeURIComponent(req.params.axId), req.query.status);
+  res.json({ ok: true, data: sessions });
+});
+
+// ========== 意图分析 ==========
+
+router.post('/intent/classify', (req, res) => {
+  const result = intent.classifyIntent(req.body.content);
+  res.json({ ok: true, data: result });
+});
+
+// ========== Portal API（给 aixin.chat 前端用） ==========
+
+router.get('/portal/agents', (req, res) => {
+  const db = getDb();
+  const agents = db.prepare(`
+    SELECT ax_id, agent_type, nickname, avatar, bio, skill_tags, rating, rating_count, credit_score, status, platform, region, created_at
+    FROM agents ORDER BY rating DESC, created_at DESC LIMIT 100
+  `).all().map(a => ({ ...a, skill_tags: JSON.parse(a.skill_tags || '[]') }));
+  res.json({ ok: true, data: agents });
+});
+
+router.get('/portal/stats', (req, res) => {
+  const db = getDb();
+  const totalAgents = db.prepare('SELECT COUNT(*) as count FROM agents').get().count;
+  const totalMessages = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
+  const totalTasks = db.prepare('SELECT COUNT(*) as count FROM tasks').get().count;
+  const onlineAgents = db.prepare("SELECT COUNT(*) as count FROM agents WHERE status = 'online'").get().count;
+  const byType = db.prepare('SELECT agent_type, COUNT(*) as count FROM agents GROUP BY agent_type').all();
+  const byPlatform = db.prepare('SELECT platform, COUNT(*) as count FROM agents GROUP BY platform').all();
+  res.json({ ok: true, data: { totalAgents, onlineAgents, totalMessages, totalTasks, byType, byPlatform } });
 });
 
 module.exports = router;

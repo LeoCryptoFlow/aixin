@@ -130,6 +130,53 @@ function initTables() {
       FOREIGN KEY (ax_id) REFERENCES agents(ax_id)
     );
 
+    -- 黑名单表
+    CREATE TABLE IF NOT EXISTS blacklist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (owner_id) REFERENCES agents(ax_id),
+      UNIQUE(owner_id, blocked_id)
+    );
+
+    -- 自动通过规则表
+    CREATE TABLE IF NOT EXISTS auto_accept_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id TEXT NOT NULL,
+      rule_type TEXT NOT NULL DEFAULT 'all',
+      rule_value TEXT DEFAULT '',
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (owner_id) REFERENCES agents(ax_id)
+    );
+
+    -- 商务会话存证表
+    CREATE TABLE IF NOT EXISTS business_sessions (
+      session_id TEXT PRIMARY KEY,
+      from_id TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      session_type TEXT DEFAULT 'general',
+      title TEXT DEFAULT '',
+      structured_data TEXT DEFAULT '{}',
+      attachments TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'open',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 技能画像索引表
+    CREATE TABLE IF NOT EXISTS skill_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ax_id TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      weight REAL DEFAULT 1.0,
+      FOREIGN KEY (ax_id) REFERENCES agents(ax_id),
+      UNIQUE(ax_id, tag)
+    );
+
     -- 创建索引
     CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_id);
     CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_id);
@@ -138,6 +185,10 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_tasks_to ON tasks(to_id);
     CREATE INDEX IF NOT EXISTS idx_agents_type ON agents(agent_type);
     CREATE INDEX IF NOT EXISTS idx_agents_skill_tags ON agents(skill_tags);
+    CREATE INDEX IF NOT EXISTS idx_blacklist_owner ON blacklist(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_skill_profiles_tag ON skill_profiles(tag);
+    CREATE INDEX IF NOT EXISTS idx_business_sessions_from ON business_sessions(from_id);
+    CREATE INDEX IF NOT EXISTS idx_business_sessions_to ON business_sessions(to_id);
   `);
 }
 
