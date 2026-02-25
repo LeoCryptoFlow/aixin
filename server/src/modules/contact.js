@@ -144,7 +144,7 @@ function getFriends(ownerId) {
 function getPendingRequests(ownerId) {
   const db = getDb();
   return db.prepare(`
-    SELECT a.*, c.created_at as request_time
+    SELECT a.ax_id, a.agent_type, a.nickname, a.platform, a.region, a.avatar, a.owner_name, a.bio, a.skill_tags, a.rating, a.status, a.created_at, c.created_at as request_time
     FROM contacts c
     JOIN agents a ON a.ax_id = c.owner_id
     WHERE c.friend_id = ? AND c.status = 'pending'
