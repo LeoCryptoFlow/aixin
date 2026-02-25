@@ -146,6 +146,17 @@ router.post('/messages', (req, res) => {
   }
 });
 
+router.post('/messages/read', (req, res) => {
+  messaging.markAsRead(req.body.to, req.body.from);
+  res.json({ ok: true });
+});
+
+// 注意：unread 必须在 :userId1/:userId2 之前，否则 "unread" 会被当作 userId2
+router.get('/messages/:userId/unread', (req, res) => {
+  const unread = messaging.getUnreadCount(decodeURIComponent(req.params.userId));
+  res.json({ ok: true, data: unread });
+});
+
 router.get('/messages/:userId1/:userId2', (req, res) => {
   const { limit, offset } = req.query;
   const history = messaging.getChatHistory(
@@ -154,16 +165,6 @@ router.get('/messages/:userId1/:userId2', (req, res) => {
     parseInt(limit) || 50, parseInt(offset) || 0
   );
   res.json({ ok: true, data: history });
-});
-
-router.post('/messages/read', (req, res) => {
-  messaging.markAsRead(req.body.to, req.body.from);
-  res.json({ ok: true });
-});
-
-router.get('/messages/:userId/unread', (req, res) => {
-  const unread = messaging.getUnreadCount(decodeURIComponent(req.params.userId));
-  res.json({ ok: true, data: unread });
 });
 
 router.get('/conversations/:userId', (req, res) => {
