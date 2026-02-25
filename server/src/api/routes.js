@@ -120,6 +120,12 @@ router.get('/contacts/:axId/pending', (req, res) => {
   res.json({ ok: true, data: pending });
 });
 
+// 别名：/requests → /pending（兼容不同 Agent 的猜测）
+router.get('/contacts/:axId/requests', (req, res) => {
+  const pending = contact.getPendingRequests(decodeURIComponent(req.params.axId));
+  res.json({ ok: true, data: pending });
+});
+
 router.delete('/contacts', (req, res) => {
   try {
     const result = contact.removeFriend(req.body.owner, req.body.friend);
