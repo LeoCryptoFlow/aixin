@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const identity = require('../core/identity');
+const { sanitizeAgent } = identity;
 const contact = require('../modules/contact');
 const messaging = require('../modules/messaging');
 const task = require('../modules/task');
@@ -16,7 +17,7 @@ const router = express.Router();
 router.post('/agents', (req, res) => {
   try {
     const agent = identity.registerAgent(req.body);
-    res.json({ ok: true, data: agent });
+    res.json({ ok: true, data: sanitizeAgent(agent) });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
@@ -25,13 +26,13 @@ router.post('/agents', (req, res) => {
 router.get('/agents/:axId', (req, res) => {
   const agent = identity.getAgent(decodeURIComponent(req.params.axId));
   if (!agent) return res.status(404).json({ ok: false, error: 'Agent 不存在' });
-  res.json({ ok: true, data: agent });
+  res.json({ ok: true, data: sanitizeAgent(agent) });
 });
 
 router.put('/agents/:axId', (req, res) => {
   try {
     const agent = identity.updateAgent(decodeURIComponent(req.params.axId), req.body);
-    res.json({ ok: true, data: agent });
+    res.json({ ok: true, data: sanitizeAgent(agent) });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
@@ -40,7 +41,7 @@ router.put('/agents/:axId', (req, res) => {
 router.get('/agents', (req, res) => {
   const { q, type } = req.query;
   const agents = q ? identity.searchAgents(q) : identity.listAgents(type);
-  res.json({ ok: true, data: agents });
+  res.json({ ok: true, data: agents.map(sanitizeAgent) });
 });
 
 // ========== 技能市场 ==========
@@ -48,7 +49,7 @@ router.get('/agents', (req, res) => {
 router.get('/market', (req, res) => {
   const { q } = req.query;
   const agents = q ? identity.searchSkillMarket(q) : identity.listAgents('skill');
-  res.json({ ok: true, data: agents });
+  res.json({ ok: true, data: agents.map(sanitizeAgent) });
 });
 
 router.post('/agents/:axId/rate', (req, res) => {
@@ -56,7 +57,7 @@ router.post('/agents/:axId/rate', (req, res) => {
   if (!score || score < 1 || score > 5) return res.status(400).json({ ok: false, error: '评分需在1-5之间' });
   const agent = identity.rateAgent(decodeURIComponent(req.params.axId), score);
   if (!agent) return res.status(404).json({ ok: false, error: 'Agent 不存在' });
-  res.json({ ok: true, data: agent });
+  res.json({ ok: true, data: sanitizeAgent(agent) });
 });
 
 // ========== 动态/朋友圈 ==========
@@ -112,7 +113,7 @@ router.post('/contacts/reject', (req, res) => {
 
 router.get('/contacts/:axId/friends', (req, res) => {
   const friends = contact.getFriends(decodeURIComponent(req.params.axId));
-  res.json({ ok: true, data: friends });
+  res.json({ ok: true, data: friends.map(sanitizeAgent) });
 });
 
 router.get('/contacts/:axId/pending', (req, res) => {

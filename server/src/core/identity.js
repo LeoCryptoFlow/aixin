@@ -4,6 +4,15 @@ const { getDb } = require('../database/db');
 // AIXin 命名空间 UUID
 const AIXIN_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
+/**
+ * 从 Agent 对象中移除敏感字段
+ */
+function sanitizeAgent(agent) {
+  if (!agent) return agent;
+  const { password, ...safe } = agent;
+  return safe;
+}
+
 // 支持的平台列表
 const PLATFORMS = ['openclaw', 'youdao-lobster', 'easyclaw', 'generic'];
 
@@ -192,6 +201,7 @@ module.exports = {
   listAgents,
   searchSkillMarket,
   rateAgent,
+  sanitizeAgent,
   PLATFORMS,
   AGENT_TYPES
 };
