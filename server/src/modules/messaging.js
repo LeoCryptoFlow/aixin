@@ -60,6 +60,21 @@ function getUnreadCount(userId) {
 }
 
 /**
+ * 获取未读消息详情（含内容）
+ */
+function getUnreadMessages(userId, limit = 100) {
+  const db = getDb();
+  const msgs = db.prepare(`
+    SELECT m.*, a.nickname as sender_name FROM messages m
+    JOIN agents a ON a.ax_id = m.from_id
+    WHERE m.to_id = ? AND m.read = 0
+    ORDER BY m.created_at ASC
+    LIMIT ?
+  `).all(userId, limit);
+  return msgs.map(m => ({ ...m, payload: JSON.parse(m.payload || '{}') }));
+}
+
+/**
  * 创建群组
  */
 function createGroup(name, ownerId, memberIds = []) {
@@ -184,6 +199,7 @@ module.exports = {
   getChatHistory,
   markAsRead,
   getUnreadCount,
+  getUnreadMessages,
   createGroup,
   getGroup,
   sendGroupMessage,

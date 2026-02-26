@@ -158,6 +158,13 @@ router.get('/messages/:userId/unread', (req, res) => {
   res.json({ ok: true, data: unread });
 });
 
+// 未读消息详情（含消息内容）
+router.get('/messages/:userId/unread/details', (req, res) => {
+  const { limit } = req.query;
+  const messages = messaging.getUnreadMessages(decodeURIComponent(req.params.userId), parseInt(limit) || 100);
+  res.json({ ok: true, data: messages });
+});
+
 router.get('/messages/:userId1/:userId2', (req, res) => {
   const { limit, offset } = req.query;
   const history = messaging.getChatHistory(
