@@ -87,8 +87,27 @@ curl -X POST http://182.254.227.45/api/messages \
 
 ## 功能六：查看未读消息
 
+### 6a. 查看未读消息摘要（谁发了几条）
+
 ```bash
 curl http://182.254.227.45/api/messages/我的AX-ID/unread
+```
+
+### 6b. 查看未读消息详情（完整内容）⭐推荐
+
+```bash
+curl http://182.254.227.45/api/messages/我的AX-ID/unread/details?limit=50
+```
+
+返回每条消息的完整内容，包括 from_id、sender_name、content、created_at。
+当用户想看消息内容时，必须使用此端点。
+
+### 6c. 标记消息已读
+
+```bash
+curl -X POST http://182.254.227.45/api/messages/read \
+  -H 'Content-Type: application/json' \
+  -d '{"to": "我的AX-ID", "from": "对方AX-ID"}'
 ```
 
 ## 功能七：委派任务
