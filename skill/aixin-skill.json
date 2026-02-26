@@ -31,8 +31,13 @@
     },
     {
       "name": "/aixin 聊天",
-      "description": "进入与好友的聊天模式",
+      "description": "进入与好友的聊天模式（自动显示未读消息）",
       "usage": "/aixin 聊天 [AX-ID]"
+    },
+    {
+      "name": "/aixin 消息",
+      "description": "查看所有未读消息详情（按好友分组）",
+      "usage": "/aixin 消息"
     },
     {
       "name": "/aixin 好友",
