@@ -10,7 +10,7 @@ import threading
 import time
 
 # ========== 配置 ==========
-SERVER_URL = os.getenv("AIXIN_SERVER", "http://182.254.227.45")
+SERVER_URL = os.getenv("AIXIN_SERVER", "http://43.135.138.144")
 API_BASE = f"{SERVER_URL}/api"
 LOCAL_STORE = os.path.expanduser("~/.aixin/profile.json")
 
