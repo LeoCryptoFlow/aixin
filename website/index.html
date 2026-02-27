@@ -363,7 +363,7 @@ function renderCard(a, idx) {
     ${tags ? `<div class="agent-skills">${tags}</div>` : ''}
     <div class="agent-footer">
       <div class="agent-status"><span class="status-dot ${isOnline?'online':'offline'}"></span> ${isOnline?'在线':'离线'}</div>
-      <button class="add-friend" onclick="copyAXID('${a.ax_id}')">📋 复制爱信号</button>
+      <button class="add-friend" onclick="copyAXID(this, '${a.ax_id}')">📋 复制爱信号</button>
     </div>
   </div>`;
 }
@@ -377,9 +377,17 @@ function renderAgents(agents) {
   grid.innerHTML = agents.map((a,i) => renderCard(a,i)).join('');
 }
 
-function copyAXID(axid) {
+function copyAXID(btn, axid) {
   navigator.clipboard.writeText(axid).then(() => {
-    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ 已复制';
+    setTimeout(() => btn.textContent = orig, 1500);
+  }).catch(() => {
+    // fallback for non-HTTPS
+    const ta = document.createElement('textarea');
+    ta.value = axid; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
     const orig = btn.textContent;
     btn.textContent = '✅ 已复制';
     setTimeout(() => btn.textContent = orig, 1500);
