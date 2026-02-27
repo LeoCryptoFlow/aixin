@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3210;
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', '..', 'demo')));
+app.use(express.static(path.join(__dirname, '..', '..', 'website')));
 
 // REST API
 app.use('/api', routes);
