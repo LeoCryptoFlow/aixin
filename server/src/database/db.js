@@ -12,8 +12,25 @@ function getDb() {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
     db = new Database(DB_PATH);
+
+    // ========== 性能关键 PRAGMA ==========
+    // WAL 模式：读写并发，不互相阻塞
     db.pragma('journal_mode = WAL');
+    // WAL 模式下 NORMAL 足够安全，且比 FULL 快 5-10x
+    db.pragma('synchronous = NORMAL');
+    // 32MB 页缓存（负数=KB，减少磁盘 I/O）
+    db.pragma('cache_size = -32000');
+    // 256MB 内存映射，大幅减少系统调用
+    db.pragma('mmap_size = 268435456');
+    // 临时表放内存
+    db.pragma('temp_store = MEMORY');
+    // 外键约束
     db.pragma('foreign_keys = ON');
+    // WAL 自动 checkpoint 阈值（页数）
+    db.pragma('wal_autocheckpoint = 1000');
+    // 页大小优化（需要在建表前设置，已有 DB 无效但无害）
+    db.pragma('page_size = 4096');
+
     initTables();
   }
   return db;
@@ -177,7 +194,16 @@ function initTables() {
       UNIQUE(ax_id, tag)
     );
 
-    -- 创建索引
+    -- Skill 安装记录表（从 routes.js 中移出，避免每次请求重建）
+    CREATE TABLE IF NOT EXISTS skill_installs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ax_id TEXT NOT NULL,
+      platform TEXT DEFAULT '',
+      callback_url TEXT DEFAULT '',
+      installed_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- ========== 基础索引 ==========
     CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_id);
     CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_id);
     CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
@@ -189,6 +215,20 @@ function initTables() {
     CREATE INDEX IF NOT EXISTS idx_skill_profiles_tag ON skill_profiles(tag);
     CREATE INDEX IF NOT EXISTS idx_business_sessions_from ON business_sessions(from_id);
     CREATE INDEX IF NOT EXISTS idx_business_sessions_to ON business_sessions(to_id);
+
+    -- ========== 复合索引（高频查询优化）==========
+    -- 未读消息查询：SELECT * FROM messages WHERE to_id=? AND read=0
+    CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_id, read);
+    -- 聊天记录查询：SELECT * FROM messages WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?)
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(from_id, to_id, created_at);
+    -- 好友列表查询：SELECT * FROM contacts WHERE owner_id=? AND status='accepted'
+    CREATE INDEX IF NOT EXISTS idx_contacts_owner_status ON contacts(owner_id, status);
+    -- 任务查询：SELECT * FROM tasks WHERE from_id=? ORDER BY created_at DESC
+    CREATE INDEX IF NOT EXISTS idx_tasks_from ON tasks(from_id);
+    -- agent 搜索优化
+    CREATE INDEX IF NOT EXISTS idx_agents_nickname ON agents(nickname);
+    -- 群成员查询
+    CREATE INDEX IF NOT EXISTS idx_group_members_member ON group_members(member_id);
   `);
 }
 

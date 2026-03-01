@@ -23,32 +23,37 @@ const AGENT_TYPES = {
 };
 
 /**
- * 生成 AX-ID
- * 格式: AX-[U/S]-[地区码]-[4位数字]
- * 个人助理: AX-U-CN-8899
- * 技能Agent: AX-S-CN-1234
+ * 生成 AI-ID
+ * 格式: AI-[4位数字]
+ * 例如: AI-0128, AI-7359
  */
 function generateAxId(agentType, region) {
-  const prefix = agentType === AGENT_TYPES.SKILL ? 'S' : 'U';
-  const reg = (region || 'CN').toUpperCase();
-  const seed = `${prefix}.${reg}.${Date.now()}.${Math.random()}`;
+  const seed = `${agentType}.${region || 'CN'}.${Date.now()}.${Math.random()}`;
   const hash = uuidv5(seed, AIXIN_NAMESPACE).replace(/-/g, '');
   const num = parseInt(hash.substring(0, 8), 16) % 10000;
   const id = String(num).padStart(4, '0');
-  return `AX-${prefix}-${reg}-${id}`;
+  return `AI-${id}`;
 }
 
 /**
- * 解析 AX-ID
+ * 解析 AI-ID
  */
 function parseAxId(axId) {
-  const match = axId.match(/^AX-([US])-([A-Z]{2})-(\d{4})$/);
-  if (!match) return null;
-  return {
-    type: match[1] === 'U' ? 'personal' : 'skill',
-    region: match[2],
-    number: match[3]
-  };
+  // 支持新格式 AI-XXXX
+  const newMatch = axId.match(/^AI-(\d{4})$/);
+  if (newMatch) {
+    return { type: 'personal', region: 'CN', number: newMatch[1] };
+  }
+  // 兼容旧格式 AX-U-CN-XXXX
+  const oldMatch = axId.match(/^AX-([US])-([A-Z]{2})-(\d{4})$/);
+  if (oldMatch) {
+    return {
+      type: oldMatch[1] === 'U' ? 'personal' : 'skill',
+      region: oldMatch[2],
+      number: oldMatch[3]
+    };
+  }
+  return null;
 }
 
 /**
@@ -144,22 +149,23 @@ function searchAgents(keyword) {
 }
 
 /**
- * 获取所有 Agent
+ * 获取所有 Agent（支持分页，避免全量返回）
  */
-function listAgents(agentType) {
+function listAgents(agentType, limit = 50, offset = 0) {
   const db = getDb();
-  if (agentType) {
-    return db.prepare('SELECT * FROM agents WHERE agent_type = ? ORDER BY rating DESC, created_at DESC').all(agentType).map(a => {
-      a.capabilities = JSON.parse(a.capabilities || '[]');
-      a.skill_tags = JSON.parse(a.skill_tags || '[]');
-      return a;
-    });
-  }
-  return db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all().map(a => {
+  const parse = (a) => {
     a.capabilities = JSON.parse(a.capabilities || '[]');
     a.skill_tags = JSON.parse(a.skill_tags || '[]');
     return a;
-  });
+  };
+  if (agentType) {
+    return db.prepare(
+      'SELECT * FROM agents WHERE agent_type = ? ORDER BY rating DESC, created_at DESC LIMIT ? OFFSET ?'
+    ).all(agentType, limit, offset).map(parse);
+  }
+  return db.prepare(
+    'SELECT * FROM agents ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  ).all(limit, offset).map(parse);
 }
 
 /**

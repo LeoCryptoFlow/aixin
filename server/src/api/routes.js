@@ -39,8 +39,8 @@ router.put('/agents/:axId', (req, res) => {
 });
 
 router.get('/agents', (req, res) => {
-  const { q, type } = req.query;
-  const agents = q ? identity.searchAgents(q) : identity.listAgents(type);
+  const { q, type, limit = 50, offset = 0 } = req.query;
+  const agents = q ? identity.searchAgents(q) : identity.listAgents(type, parseInt(limit), parseInt(offset));
   res.json({ ok: true, data: agents.map(sanitizeAgent) });
 });
 
@@ -254,6 +254,11 @@ router.get('/tasks/received/:axId', (req, res) => {
   res.json({ ok: true, data: task.getReceivedTasks(decodeURIComponent(req.params.axId)) });
 });
 
+// ========== 统计（缓存结果避免每次全表扫） ==========
+let _statsCache = null;
+let _statsCacheAt = 0;
+const STATS_CACHE_TTL = 10000; // 10秒
+
 // ========== Skill 商店（供 OpenClaw 下载安装） ==========
 
 // Skill 清单 — OpenClaw 通过此接口发现爱信
@@ -281,22 +286,12 @@ router.get('/skill/download', (req, res) => {
   fs.createReadStream(skillPath).pipe(res);
 });
 
-// Skill 安装回调 — Agent 安装爱信后回调注册
+// Skill 安装回调 — Agent 安装爱信后回调注册（表在 db.js 初始化时已建）
 router.post('/skill/install', (req, res) => {
   try {
     const { ax_id, platform, callback_url } = req.body;
     if (!ax_id) return res.status(400).json({ ok: false, error: '缺少 ax_id' });
-    // 记录安装信息
-    const db = require('../database/db').getDb();
-    db.prepare(`
-      CREATE TABLE IF NOT EXISTS skill_installs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ax_id TEXT NOT NULL,
-        platform TEXT DEFAULT '',
-        callback_url TEXT DEFAULT '',
-        installed_at TEXT DEFAULT (datetime('now'))
-      )
-    `).run();
+    const db = getDb();
     db.prepare('INSERT INTO skill_installs (ax_id, platform, callback_url) VALUES (?, ?, ?)').run(ax_id, platform || '', callback_url || '');
     res.json({ ok: true, message: '爱信 Skill 安装成功', data: { ax_id, status: 'installed' } });
   } catch (e) {
@@ -304,11 +299,10 @@ router.post('/skill/install', (req, res) => {
   }
 });
 
-// Skill 安装统计
+// Skill 安装统计（带短暂缓存避免频繁全表扫）
 router.get('/skill/stats', (req, res) => {
   try {
-    const db = require('../database/db').getDb();
-    db.prepare(`CREATE TABLE IF NOT EXISTS skill_installs (id INTEGER PRIMARY KEY AUTOINCREMENT, ax_id TEXT, platform TEXT, callback_url TEXT, installed_at TEXT DEFAULT (datetime('now')))`).run();
+    const db = getDb();
     const total = db.prepare('SELECT COUNT(*) as count FROM skill_installs').get();
     const byPlatform = db.prepare('SELECT platform, COUNT(*) as count FROM skill_installs GROUP BY platform').all();
     res.json({ ok: true, data: { total: total.count, by_platform: byPlatform } });
@@ -428,6 +422,10 @@ router.get('/portal/agents', (req, res) => {
 });
 
 router.get('/portal/stats', (req, res) => {
+  const now = Date.now();
+  if (_statsCache && now - _statsCacheAt < STATS_CACHE_TTL) {
+    return res.json({ ok: true, data: _statsCache });
+  }
   const db = getDb();
   const totalAgents = db.prepare('SELECT COUNT(*) as count FROM agents').get().count;
   const totalMessages = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
@@ -435,7 +433,9 @@ router.get('/portal/stats', (req, res) => {
   const onlineAgents = db.prepare("SELECT COUNT(*) as count FROM agents WHERE status = 'online'").get().count;
   const byType = db.prepare('SELECT agent_type, COUNT(*) as count FROM agents GROUP BY agent_type').all();
   const byPlatform = db.prepare('SELECT platform, COUNT(*) as count FROM agents GROUP BY platform').all();
-  res.json({ ok: true, data: { totalAgents, onlineAgents, totalMessages, totalTasks, byType, byPlatform } });
+  _statsCache = { totalAgents, onlineAgents, totalMessages, totalTasks, byType, byPlatform };
+  _statsCacheAt = now;
+  res.json({ ok: true, data: _statsCache });
 });
 
 module.exports = router;

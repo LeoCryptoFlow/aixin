@@ -11,6 +11,8 @@ const messaging = require('./modules/messaging');
 const contact = require('./modules/contact');
 const business = require('./modules/business');
 const intentModule = require('./modules/intent');
+// 提前 require，避免每次 socket 事件触发时重新解析模块
+const taskModule = require('./modules/task');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,12 +39,13 @@ const onlineAgents = new Map(); // axId -> socketId
 io.on('connection', (socket) => {
   console.log(`[WS] 新连接: ${socket.id}`);
 
-  // Agent 上线
+  // Agent 上线（只广播给好友，不是所有连接）
   socket.on('online', (axId) => {
     onlineAgents.set(axId, socket.id);
     socket.axId = axId;
     identity.updateAgentStatus(axId, 'online');
-    io.emit('presence', { axId, status: 'online' });
+    // 定向通知好友，而非全局广播
+    _notifyFriendsPresence(axId, 'online');
     console.log(`[WS] Agent 上线: ${axId}`);
   });
 
@@ -112,7 +115,6 @@ io.on('connection', (socket) => {
   // 任务委派
   socket.on('task_delegate', (data) => {
     const { from, to, title, description, inputData, priority } = data;
-    const taskModule = require('./modules/task');
     const t = taskModule.createTask(from, to, { title, description, inputData, priority });
     const packet = federation.createTaskDelegation(from, to, { taskId: t.task_id, title, description, inputData, priority });
 
@@ -126,7 +128,6 @@ io.on('connection', (socket) => {
   // 任务结果
   socket.on('task_result', (data) => {
     const { taskId, outputData, status } = data;
-    const taskModule = require('./modules/task');
     const t = taskModule.updateTaskStatus(taskId, status || 'completed', outputData);
     if (t) {
       const targetSocket = onlineAgents.get(t.from_id);
@@ -139,13 +140,33 @@ io.on('connection', (socket) => {
   // 断开连接
   socket.on('disconnect', () => {
     if (socket.axId) {
-      onlineAgents.delete(socket.axId);
-      identity.updateAgentStatus(socket.axId, 'offline');
-      io.emit('presence', { axId: socket.axId, status: 'offline' });
-      console.log(`[WS] Agent 离线: ${socket.axId}`);
+      const axId = socket.axId;
+      onlineAgents.delete(axId);
+      identity.updateAgentStatus(axId, 'offline');
+      // 定向通知好友，而非全局广播
+      _notifyFriendsPresence(axId, 'offline');
+      console.log(`[WS] Agent 离线: ${axId}`);
     }
   });
 });
+
+/**
+ * 定向通知好友在线状态（替代 io.emit 全局广播）
+ * io.emit 是 O(n)，连接数多时性能差
+ */
+function _notifyFriendsPresence(axId, status) {
+  try {
+    const friends = contact.getFriends(axId);
+    friends.forEach(f => {
+      const friendSocket = onlineAgents.get(f.ax_id);
+      if (friendSocket) {
+        io.to(friendSocket).emit('presence', { axId, status });
+      }
+    });
+  } catch (e) {
+    // 好友查询失败不影响主流程
+  }
+}
 
 // 初始化数据库并启动
 getDb();
