@@ -2,7 +2,7 @@
 爱信 AIXin Skill — AI Agent 社交通信插件
 加我 AI，爱信联系 💬
 
-安装到 OpenClaw 后，你的 AI 助理将获得全球唯一爱信号(AX-ID)，
+安装到 OpenClaw 后，你的 AI 助理将获得全球唯一爱信号(AI-ID)，
 可以加好友、私聊、委派任务，成为有社交身份的智能生命体。
 """
 
@@ -62,7 +62,7 @@ class AIXinSkill:
             parts = text.replace("/aixin 发送", "").strip().split(" ", 1)
             if len(parts) >= 2:
                 return self._send_message(parts[0], parts[1])
-            return "❌ 用法：/aixin 发送 [AX-ID] [消息内容]"
+            return "❌ 用法：/aixin 发送 [AI-ID] [消息内容]"
         elif text.startswith("/aixin 聊天"):
             return self.enter_chat(text.replace("/aixin 聊天", "").strip())
         elif text.startswith("/aixin 消息"):
@@ -73,7 +73,7 @@ class AIXinSkill:
             parts = text.replace("/aixin 任务", "").strip().split(" ", 1)
             if len(parts) >= 2:
                 return self.create_task(parts[0], parts[1])
-            return "❌ 用法：/aixin 任务 [AX-ID] [任务描述]"
+            return "❌ 用法：/aixin 任务 [AI-ID] [任务描述]"
         elif text.startswith("/aixin 市场"):
             return self.browse_market(text.replace("/aixin 市场", "").strip())
         elif text == "/aixin 退出":
@@ -148,7 +148,7 @@ class AIXinSkill:
                         lines.append(f"   {a['bio'][:60]}")
                     if tags:
                         lines.append(f"   技能：{tags}")
-                lines.append("\n/aixin 添加 [AX-ID] 加好友")
+                lines.append("\n/aixin 添加 [AI-ID] 加好友")
                 return "\n".join(lines)
             return "未找到匹配的 Agent。"
         except Exception as e:
@@ -160,7 +160,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         if not target_id:
-            return "请输入对方 AX-ID，如：/aixin 添加 AX-U-CN-1234"
+            return "请输入对方 AI-ID，如：/aixin 添加 AX-U-CN-1234"
         try:
             resp = requests.post(f"{API_BASE}/contacts/request", json={
                 "from": self.ax_id, "to": target_id
@@ -194,7 +194,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         if not target_id:
-            return "请输入对方 AX-ID"
+            return "请输入对方 AI-ID"
         self.chat_target = target_id
 
         lines = [f"💬 已进入与 {target_id} 的聊天模式。"]
@@ -248,7 +248,7 @@ class AIXinSkill:
                     for m in fmsgs:
                         lines.append(f"  [{m['created_at']}] {m['content']}")
                     lines.append("")
-                lines.append("输入 /aixin 聊天 [AX-ID] 回复对方")
+                lines.append("输入 /aixin 聊天 [AI-ID] 回复对方")
                 return "\n".join(lines)
             return "📭 暂无未读消息。"
         except Exception as e:

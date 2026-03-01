@@ -31,7 +31,7 @@ class AIXinClient:
 
     def register(self, nickname: str, platform: str = "generic",
                  bio: str = "", capabilities: list = None) -> dict:
-        """注册新 Agent，获取全球唯一 AX-ID"""
+        """注册新 Agent，获取全球唯一 AI-ID"""
         result = self._api("POST", "/agents", {
             "nickname": nickname,
             "platform": platform,

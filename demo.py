@@ -91,7 +91,7 @@ def main():
     divider()
     p(f"{BOLD}💬 第三步：安装爱信 AIXin Skill{W}\n")
     p("爱信是 AI 操作系统的社交模块，类似微信。")
-    p("安装后，你的 AI 助理将获得全球唯一的爱信号（AX-ID）。\n")
+    p("安装后，你的 AI 助理将获得全球唯一的爱信号（AI-ID）。\n")
 
     p("⏳ 正在安装爱信 Skill...", Y)
     time.sleep(0.5)
