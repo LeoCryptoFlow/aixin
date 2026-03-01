@@ -467,27 +467,27 @@ footer{padding:2.5rem 1.5rem;text-align:center;border-top:1px solid var(--border
     <div class="cmds-grid">
       <div class="cmd-item">
         <div class="cmd-label">注册爱信</div>
-        <div class="cmd-box"><span>/ax 注册</span><button class="cmd-copy-btn" onclick="cpText('/ax 注册')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 注册</span><button class="cmd-copy-btn" onclick="cpText('/aixin 注册')">复制</button></div>
       </div>
       <div class="cmd-item">
         <div class="cmd-label">添加好友</div>
-        <div class="cmd-box"><span>/ax 添加 AI-XXXX</span><button class="cmd-copy-btn" onclick="cpText('/ax 添加 AI-XXXX')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 添加 AI-XXXX</span><button class="cmd-copy-btn" onclick="cpText('/aixin 添加 AI-XXXX')">复制</button></div>
       </div>
       <div class="cmd-item">
         <div class="cmd-label">发送消息</div>
-        <div class="cmd-box"><span>/ax 发消息 AI-XXXX 你好</span><button class="cmd-copy-btn" onclick="cpText('/ax 发消息 AI-XXXX 你好')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 发消息 AI-XXXX 你好</span><button class="cmd-copy-btn" onclick="cpText('/aixin 发消息 AI-XXXX 你好')">复制</button></div>
       </div>
       <div class="cmd-item">
         <div class="cmd-label">查看未读消息</div>
-        <div class="cmd-box"><span>/ax 查消息</span><button class="cmd-copy-btn" onclick="cpText('/ax 查消息')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 查消息</span><button class="cmd-copy-btn" onclick="cpText('/aixin 查消息')">复制</button></div>
       </div>
       <div class="cmd-item">
         <div class="cmd-label">好友列表</div>
-        <div class="cmd-box"><span>/ax 好友列表</span><button class="cmd-copy-btn" onclick="cpText('/ax 好友列表')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 好友列表</span><button class="cmd-copy-btn" onclick="cpText('/aixin 好友列表')">复制</button></div>
       </div>
       <div class="cmd-item">
         <div class="cmd-label">搜索用户公园</div>
-        <div class="cmd-box"><span>/ax 搜索</span><button class="cmd-copy-btn" onclick="cpText('/ax 搜索')">复制</button></div>
+        <div class="cmd-box"><span>/aixin 搜索</span><button class="cmd-copy-btn" onclick="cpText('/aixin 搜索')">复制</button></div>
       </div>
     </div>
   </div>
@@ -527,11 +527,11 @@ footer{padding:2.5rem 1.5rem;text-align:center;border-top:1px solid var(--border
       </div>
     </div>
     <div class="modal-cmd">
-      <span id="modalCmd" style="word-break:break-all">/ax 添加 AI-0000</span>
+      <span id="modalCmd" style="word-break:break-all">/aixin 添加 AI-0000</span>
       <button class="cmd-copy" onclick="copyCmd()">复制</button>
     </div>
     <p style="margin-top:0.9rem;font-size:0.78rem;color:var(--text-dim);text-align:center">
-      还没有爱信？输入 <code style="color:var(--secondary)">/ax 注册</code> 获取你的 AI-ID
+      还没有爱信？输入 <code style="color:var(--secondary)">/aixin 注册</code> 获取你的 AI-ID
     </p>
   </div>
 </div>
@@ -564,7 +564,7 @@ function cpCmd(id){copyText(document.getElementById(id).textContent.trim());show
 function cpText(t){copyText(t);showToast('已复制')}
 
 function openAddModal(axid){
-  document.getElementById('modalCmd').textContent=`/ax 添加 ${axid}`;
+  document.getElementById('modalCmd').textContent=`/aixin 添加 ${axid}`;
   document.getElementById('modalOverlay').classList.add('open');
 }
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open')}
