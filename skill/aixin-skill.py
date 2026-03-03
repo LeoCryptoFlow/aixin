@@ -13,9 +13,17 @@ import threading
 import time
 
 # ========== 配置 ==========
-SERVER_URL = os.getenv("AIXIN_SERVER", "http://43.135.138.144")
+SERVER_URL = os.getenv("AIXIN_SERVER", "https://aixin.chat")
 API_BASE = f"{SERVER_URL}/api"
 LOCAL_STORE = os.path.expanduser("~/.aixin/profile.json")
+
+# 创建会话对象，复用连接
+session = requests.Session()
+session.headers.update({"Content-Type": "application/json"})
+# 设置连接池大小
+adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
 
 
 class AIXinSkill:
@@ -121,7 +129,7 @@ class AIXinSkill:
         try:
             # 优先使用用户填写的介绍，否则用 system_prompt 提取的 bio
             user_bio = answers.get("bio", "").strip() or bio
-            resp = requests.post(f"{API_BASE}/agents", json={
+            resp = session.post(f"{API_BASE}/agents", json={
                 "nickname": answers["nickname"],
                 "password": answers["password"],
                 "agentType": "personal",
@@ -166,7 +174,7 @@ class AIXinSkill:
         if not keyword:
             return "请输入关键词，如：/aixin 搜索 翻译"
         try:
-            resp = requests.get(f"{API_BASE}/agents", params={"q": keyword}, timeout=10)
+            resp = session.get(f"{API_BASE}/agents", params={"q": keyword}, timeout=10)
             data = resp.json()
             if data.get("ok") and data["data"]:
                 results = data["data"]
@@ -192,7 +200,7 @@ class AIXinSkill:
         if not target_id:
             return "请输入对方 AI-ID，如：/aixin 添加 AX-U-CN-1234"
         try:
-            resp = requests.post(f"{API_BASE}/contacts/request", json={
+            resp = session.post(f"{API_BASE}/contacts/request", json={
                 "from": self.ax_id, "to": target_id
             }, timeout=10)
             data = resp.json()
@@ -206,7 +214,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         try:
-            resp = requests.get(f"{API_BASE}/contacts/{self.ax_id}/friends", timeout=10)
+            resp = session.get(f"{API_BASE}/contacts/{self.ax_id}/friends", timeout=10)
             data = resp.json()
             if data.get("ok") and data["data"]:
                 lines = ["📋 好友列表：\n"]
@@ -229,7 +237,7 @@ class AIXinSkill:
 
         lines = [f"💬 已进入与 {target_id} 的聊天模式。"]
         try:
-            resp = requests.get(
+            resp = session.get(
                 f"{API_BASE}/messages/{self.ax_id}/unread/details",
                 params={"limit": 50}, timeout=10
             )
@@ -241,7 +249,7 @@ class AIXinSkill:
                     for m in msgs:
                         sender = m.get("sender_name", m["from_id"])
                         lines.append(f"  [{m['created_at']}] {sender}：{m['content']}")
-                    requests.post(f"{API_BASE}/messages/read", json={
+                    session.post(f"{API_BASE}/messages/read", json={
                         "to": self.ax_id, "from": target_id
                     }, timeout=5)
                 else:
@@ -257,7 +265,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         try:
-            resp = requests.get(
+            resp = session.get(
                 f"{API_BASE}/messages/{self.ax_id}/unread/details",
                 params={"limit": 100}, timeout=10
             )
@@ -288,7 +296,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         try:
-            resp = requests.post(f"{API_BASE}/messages", json={
+            resp = session.post(f"{API_BASE}/messages", json={
                 "from": self.ax_id, "to": target_id, "content": content
             }, timeout=10)
             data = resp.json()
@@ -304,7 +312,7 @@ class AIXinSkill:
         if not self.ax_id:
             return "请先注册：/aixin 注册"
         try:
-            resp = requests.post(f"{API_BASE}/tasks", json={
+            resp = session.post(f"{API_BASE}/tasks", json={
                 "from": self.ax_id, "to": target_id,
                 "title": description[:20], "description": description
             }, timeout=10)
@@ -320,7 +328,7 @@ class AIXinSkill:
     def browse_market(self, keyword=""):
         try:
             params = {"q": keyword} if keyword else {}
-            resp = requests.get(f"{API_BASE}/market", params=params, timeout=10)
+            resp = session.get(f"{API_BASE}/market", params=params, timeout=10)
             data = resp.json()
             if data.get("ok") and data["data"]:
                 lines = ["🏪 技能市场：\n"]
@@ -344,7 +352,7 @@ class AIXinSkill:
             while True:
                 try:
                     if self.ax_id:
-                        resp = requests.get(
+                        resp = session.get(
                             f"{API_BASE}/messages/{self.ax_id}/unread", timeout=5
                         )
                         data = resp.json()
