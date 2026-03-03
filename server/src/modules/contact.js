@@ -97,15 +97,27 @@ function sendFriendRequest(ownerId, friendId) {
 
 /**
  * 接受好友请求
+ * @param ownerId - 接受请求的人（被申请方）
+ * @param friendId - 发送请求的人（申请方）
  */
 function acceptFriendRequest(ownerId, friendId) {
   const db = getDb();
-  // 更新对方发来的请求
+  
+  // 检查是否有待处理的请求
+  const request = db.prepare(
+    "SELECT * FROM contacts WHERE owner_id = ? AND friend_id = ? AND status = 'pending'"
+  ).get(friendId, ownerId);
+  
+  if (!request) {
+    throw new Error('没有待处理的好友请求');
+  }
+  
+  // 更新申请方发来的请求状态为 accepted
   db.prepare(
     "UPDATE contacts SET status = 'accepted' WHERE owner_id = ? AND friend_id = ?"
   ).run(friendId, ownerId);
 
-  // 双向添加
+  // 为接受方也添加一条 accepted 记录（双向好友关系）
   db.prepare(
     "INSERT OR REPLACE INTO contacts (owner_id, friend_id, status) VALUES (?, ?, 'accepted')"
   ).run(ownerId, friendId);
