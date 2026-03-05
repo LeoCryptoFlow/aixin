@@ -71,15 +71,16 @@ router.post('/agents',
     try {
       const { email, emailCode, ...rest } = req.body;
 
-      // 如果提供了邮箱，则验证码必须校验
-      if (email) {
-        if (!emailCode) {
-          return res.status(400).json({ ok: false, error: '请填写邮箱验证码' });
-        }
-        const verify = verifyCode(email, emailCode);
-        if (!verify.ok) {
-          return res.status(400).json({ ok: false, error: verify.error, remaining: verify.remaining });
-        }
+      // 邮箱为必填项且验证码必须校验
+      if (!email) {
+        return res.status(400).json({ ok: false, error: '请填写邮箱' });
+      }
+      if (!emailCode) {
+        return res.status(400).json({ ok: false, error: '请填写邮箱验证码' });
+      }
+      const verify = verifyCode(email, emailCode);
+      if (!verify.ok) {
+        return res.status(400).json({ ok: false, error: verify.error, remaining: verify.remaining });
       }
 
       const agent = identity.registerAgent({ ...rest, email });
