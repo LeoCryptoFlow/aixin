@@ -24,14 +24,15 @@ const AGENT_TYPES = {
 
 /**
  * 生成 AI-ID
- * 格式: AI-[4位数字]
- * 例如: AI-0128, AI-7359
+ * 格式: AI-[n位数字]，默认6位
+ * 例如: AI-012833, AI-735912
  */
-function generateAxId(agentType, region) {
+function generateAxId(agentType, region, length = 6) {
   const seed = `${agentType}.${region || 'CN'}.${Date.now()}.${Math.random()}`;
   const hash = uuidv5(seed, AIXIN_NAMESPACE).replace(/-/g, '');
-  const num = parseInt(hash.substring(0, 8), 16) % 10000;
-  const id = String(num).padStart(4, '0');
+  const modulo = Math.pow(10, length);
+  const num = parseInt(hash.substring(0, 10), 16) % modulo;
+  const id = String(num).padStart(length, '0');
   return `AI-${id}`;
 }
 
@@ -39,8 +40,8 @@ function generateAxId(agentType, region) {
  * 解析 AI-ID
  */
 function parseAxId(axId) {
-  // 支持新格式 AI-XXXX
-  const newMatch = axId.match(/^AI-(\d{4})$/);
+  // 支持新格式 AI-XXXX(多位数字)
+  const newMatch = axId.match(/^AI-(\d+)$/);
   if (newMatch) {
     return { type: 'personal', region: 'CN', number: newMatch[1] };
   }
@@ -69,35 +70,57 @@ function registerAgent({ nickname, password, agentType, platform, region, avatar
     if (existing) throw new Error('该邮箱已被注册');
   }
 
-  const axId = generateAxId(type, region);
-
-  // 检查是否 ID 冲突，极小概率，重试
-  let finalId = axId;
+  // 检查是否 ID 冲突并重试，添加 try-catch 处理并发插入
+  let finalId;
   let attempts = 0;
-  while (db.prepare('SELECT ax_id FROM agents WHERE ax_id = ?').get(finalId) && attempts < 10) {
-    finalId = generateAxId(type, region);
-    attempts++;
+  let inserted = false;
+
+  while (!inserted && attempts < 20) {
+    // 超过3次重试后，增加ID长度，以防ID池被极度耗尽
+    const idLength = attempts >= 3 ? 6 + Math.floor(attempts / 3) : 6;
+    finalId = generateAxId(type, region, idLength);
+    
+    // 乐观查询，若已存在则直接重试
+    if (db.prepare('SELECT ax_id FROM agents WHERE ax_id = ?').get(finalId)) {
+      attempts++;
+      continue;
+    }
+
+    try {
+      db.prepare(`
+        INSERT INTO agents (ax_id, agent_type, nickname, password, email, email_verified, platform, region, avatar, owner_name, bio, skill_tags, model_base, capabilities)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        finalId,
+        type,
+        nickname,
+        password || '',
+        email || '',
+        email ? 1 : 0,  // 通过验证码注册的视为已验证
+        platform || 'openclaw',
+        (region || 'CN').toUpperCase(),
+        avatar || '',
+        ownerName || '',
+        bio || '',
+        JSON.stringify(skillTags || []),
+        modelBase || '',
+        JSON.stringify(capabilities || [])
+      );
+      inserted = true;
+    } catch (err) {
+      // 若发生 UNIQUE constraint 冲突说明被并发占用，继续重试
+      if (err.message && err.message.includes('UNIQUE constraint failed')) {
+        attempts++;
+      } else {
+        throw err;
+      }
+    }
   }
 
-  db.prepare(`
-    INSERT INTO agents (ax_id, agent_type, nickname, password, email, email_verified, platform, region, avatar, owner_name, bio, skill_tags, model_base, capabilities)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    finalId,
-    type,
-    nickname,
-    password || '',
-    email || '',
-    email ? 1 : 0,  // 通过验证码注册的视为已验证
-    platform || 'openclaw',
-    (region || 'CN').toUpperCase(),
-    avatar || '',
-    ownerName || '',
-    bio || '',
-    JSON.stringify(skillTags || []),
-    modelBase || '',
-    JSON.stringify(capabilities || [])
-  );
+  if (!inserted) {
+    throw new Error('服务器繁忙，生成 ID 冲突，请稍后再试');
+  }
+
   return getAgent(finalId);
 }
 
