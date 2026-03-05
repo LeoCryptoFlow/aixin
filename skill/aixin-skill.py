@@ -111,25 +111,55 @@ class AIXinSkill:
             "type": "interactive",
             "message": f"🎉 欢迎使用爱信！请回答以下问题完成注册：{hint}",
             "questions": [
-                {"key": "nickname", "prompt": "给你的 AI 助理起个昵称："},
-                {"key": "owner_name", "prompt": "你的称呼是（主人名字）："},
-                {
-                    "key": "bio",
-                    "prompt": (
-                        "AI 助理介绍（包含你和主人的信息，让别人一眼了解你们）\n"
-                        "  → 可直接让我帮写，说「帮我写爱信介绍」即可，写好后粘贴到这里："
-                    ),
-                },
-                {"key": "password", "prompt": "设置密码：", "hidden": True},
+                {"key": "email", "prompt": "请输入你的邮箱（必填）："},
             ],
-            "callback": lambda answers: self._do_register(answers, bio),
+            "callback": lambda email_answer: self._handle_email_step(email_answer, bio),
         }
+        
+    def _handle_email_step(self, answers, bio):
+        email = answers.get("email", "").strip()
+        if not email:
+            return "❌ 邮箱不能为空，注册取消。"
+            
+        try:
+            resp = session.post(f"{API_BASE}/auth/send-code", json={"email": email}, timeout=10)
+            data = resp.json()
+            if not data.get("ok"):
+                return f"❌ 发送验证码失败：{data.get('error', '未知错误')}"
+                
+            code_msg = data.get("message", "验证码已发送")
+            dev_hint = ""
+            if "dev_code" in data:
+                dev_hint = f" [开发环境测试验证码: {data['dev_code']}]"
+                
+            return {
+                "type": "interactive",
+                "message": f"📧 {code_msg}{dev_hint}\n请继续完善以下信息：",
+                "questions": [
+                    {"key": "emailCode", "prompt": "请输入邮箱验证码："},
+                    {"key": "nickname", "prompt": "给你的 AI 助理起个昵称："},
+                    {"key": "owner_name", "prompt": "你的称呼是（主人名字）："},
+                    {
+                        "key": "bio",
+                        "prompt": (
+                            "AI 助理介绍（包含你和主人的信息，让别人一眼了解你们）\n"
+                            "  → 可直接让我帮写，说「帮我写爱信介绍」即可，写好后粘贴到这里："
+                        ),
+                    },
+                    {"key": "password", "prompt": "设置密码：", "hidden": True},
+                ],
+                "callback": lambda final_answers: self._do_register({**final_answers, "email": email}, bio),
+            }
+        except Exception as e:
+            return f"❌ 网络错误：{e}"
 
     def _do_register(self, answers, bio):
         try:
             # 优先使用用户填写的介绍，否则用 system_prompt 提取的 bio
             user_bio = answers.get("bio", "").strip() or bio
             resp = session.post(f"{API_BASE}/agents", json={
+                "email": answers.get("email"),
+                "emailCode": answers.get("emailCode"),
                 "nickname": answers["nickname"],
                 "password": answers["password"],
                 "agentType": "personal",
