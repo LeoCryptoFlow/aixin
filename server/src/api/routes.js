@@ -9,19 +9,86 @@ const task = require('../modules/task');
 const business = require('../modules/business');
 const intent = require('../modules/intent');
 const { getDb } = require('../database/db');
+const { rateLimit } = require('../utils/rateLimit');
+const { sendVerificationCode, verifyCode } = require('../utils/emailVerify');
 
 const router = express.Router();
 
+// ========== 邮箱验证码（注册前发送/验证） ==========
+
+// 发送邮箱验证码：每分钟限1次，每IP每小时最多5次
+const sendCodeLimiter = rateLimit({
+  windowMs: 3600000,  // 1小时
+  maxRequests: 5,     // 每IP每小时最多5次
+  blockDuration: 1800000, // 封禁30分钟
+  keyGenerator: (req) => `send_code:${req.ip}`
+});
+
+router.post('/auth/send-code',
+  sendCodeLimiter,
+  (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ ok: false, error: '请填写邮箱' });
+    // 基础邮箱格式校验
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ ok: false, error: '邮箱格式不正确' });
+    }
+    const result = sendVerificationCode(email);
+    if (!result.ok) {
+      return res.status(429).json(result);
+    }
+    // 生产环境不返回 code，开发环境可保留
+    const isProd = process.env.NODE_ENV === 'production';
+    res.json({
+      ok: true,
+      message: result.message,
+      ...(isProd ? {} : { dev_code: result.code }) // 仅开发环境
+    });
+  }
+);
+
 // ========== Agent 身份 ==========
 
-router.post('/agents', (req, res) => {
-  try {
-    const agent = identity.registerAgent(req.body);
-    res.json({ ok: true, data: sanitizeAgent(agent) });
-  } catch (e) {
-    res.status(400).json({ ok: false, error: e.message });
-  }
+// 注册限频：每IP每10分钟最多5次
+const registerLimiter = rateLimit({
+  windowMs: 600000,   // 10分钟
+  maxRequests: 5,
+  blockDuration: 3600000, // 封禁1小时
+  keyGenerator: (req) => `register:${req.ip}`
 });
+
+// 通用接口限频：每IP每分钟最多60次
+const generalLimiter = rateLimit({
+  windowMs: 60000,
+  maxRequests: 60,
+  blockDuration: 300000,
+  keyGenerator: (req) => `general:${req.ip}`
+});
+
+router.post('/agents',
+  registerLimiter,
+  (req, res) => {
+    try {
+      const { email, emailCode, ...rest } = req.body;
+
+      // 如果提供了邮箱，则验证码必须校验
+      if (email) {
+        if (!emailCode) {
+          return res.status(400).json({ ok: false, error: '请填写邮箱验证码' });
+        }
+        const verify = verifyCode(email, emailCode);
+        if (!verify.ok) {
+          return res.status(400).json({ ok: false, error: verify.error, remaining: verify.remaining });
+        }
+      }
+
+      const agent = identity.registerAgent({ ...rest, email });
+      res.json({ ok: true, data: sanitizeAgent(agent) });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  }
+);
 
 router.get('/agents/:axId', (req, res) => {
   const agent = identity.getAgent(decodeURIComponent(req.params.axId));

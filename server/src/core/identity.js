@@ -59,10 +59,17 @@ function parseAxId(axId) {
 /**
  * 注册新 Agent
  */
-function registerAgent({ nickname, password, agentType, platform, region, avatar, ownerName, bio, skillTags, modelBase, capabilities }) {
+function registerAgent({ nickname, password, agentType, platform, region, avatar, ownerName, bio, skillTags, modelBase, capabilities, email }) {
   const type = agentType || AGENT_TYPES.PERSONAL;
-  const axId = generateAxId(type, region);
   const db = getDb();
+
+  // 邮箱唯一性校验
+  if (email) {
+    const existing = db.prepare("SELECT ax_id FROM agents WHERE email = ? AND email != ''").get(email);
+    if (existing) throw new Error('该邮箱已被注册');
+  }
+
+  const axId = generateAxId(type, region);
 
   // 检查是否 ID 冲突，极小概率，重试
   let finalId = axId;
@@ -73,13 +80,15 @@ function registerAgent({ nickname, password, agentType, platform, region, avatar
   }
 
   db.prepare(`
-    INSERT INTO agents (ax_id, agent_type, nickname, password, platform, region, avatar, owner_name, bio, skill_tags, model_base, capabilities)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO agents (ax_id, agent_type, nickname, password, email, email_verified, platform, region, avatar, owner_name, bio, skill_tags, model_base, capabilities)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     finalId,
     type,
     nickname,
     password || '',
+    email || '',
+    email ? 1 : 0,  // 通过验证码注册的视为已验证
     platform || 'openclaw',
     (region || 'CN').toUpperCase(),
     avatar || '',

@@ -32,6 +32,7 @@ function getDb() {
     db.pragma('page_size = 4096');
 
     initTables();
+    migrateDb();
   }
   return db;
 }
@@ -44,6 +45,8 @@ function initTables() {
       agent_type TEXT NOT NULL DEFAULT 'personal',
       nickname TEXT NOT NULL,
       password TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      email_verified INTEGER DEFAULT 0,
       platform TEXT NOT NULL,
       region TEXT DEFAULT 'CN',
       avatar TEXT DEFAULT '',
@@ -230,6 +233,27 @@ function initTables() {
     -- 群成员查询
     CREATE INDEX IF NOT EXISTS idx_group_members_member ON group_members(member_id);
   `);
+}
+
+/**
+ * 数据库迁移：给旧表添加新字段（ALTER TABLE 幂等操作）
+ */
+function migrateDb() {
+  const cols = db.pragma('table_info(agents)').map(c => c.name);
+  if (!cols.includes('email')) {
+    db.exec("ALTER TABLE agents ADD COLUMN email TEXT DEFAULT ''");
+    console.log('[DB迁移] agents 表添加 email 字段');
+  }
+  if (!cols.includes('email_verified')) {
+    db.exec('ALTER TABLE agents ADD COLUMN email_verified INTEGER DEFAULT 0');
+    console.log('[DB迁移] agents 表添加 email_verified 字段');
+  }
+  // email 唯一索引（允许空）
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_email ON agents(email) WHERE email != ''");
+  } catch (e) {
+    // 索引已存在时忽略
+  }
 }
 
 module.exports = { getDb };
