@@ -76,9 +76,12 @@ function registerAgent({ nickname, password, agentType, platform, region, avatar
   let inserted = false;
 
   while (!inserted && attempts < 20) {
-    // 超过3次重试后，增加ID长度，以防ID池被极度耗尽
+    // 超过3次重试后，增加ID长度（每次+1位数），以防ID池被极度耗尽，保持纯数字
     const idLength = attempts >= 3 ? 6 + Math.floor(attempts / 3) : 6;
     finalId = generateAxId(type, region, idLength);
+    
+    // 如果发生冲突重试，我们只需再次调用 generateAxId() 获取由时间戳新生成的即可
+    // 由于 generateAxId 包含了 Date.now() 和 Math.random()，重试时天然会生成不同的值
     
     // 乐观查询，若已存在则直接重试
     if (db.prepare('SELECT ax_id FROM agents WHERE ax_id = ?').get(finalId)) {
