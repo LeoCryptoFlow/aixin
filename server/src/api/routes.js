@@ -11,6 +11,7 @@ const intent = require('../modules/intent');
 const { getDb } = require('../database/db');
 const { rateLimit } = require('../utils/rateLimit');
 const { sendVerificationCode, verifyCode } = require('../utils/emailVerify');
+const { signToken, authMiddleware, isOwner } = require('../utils/auth');
 
 const router = express.Router();
 
@@ -37,13 +38,59 @@ router.post('/auth/send-code',
     if (!result.ok) {
       return res.status(429).json(result);
     }
-    // 生产环境不返回 code，开发环境可保留
+    // TODO: 正式对接邮件发送前，临时让生产环境也透传 code 便于用户注册测试
     const isProd = process.env.NODE_ENV === 'production';
     res.json({
       ok: true,
       message: result.message,
-      ...(isProd ? {} : { dev_code: result.code }) // 仅开发环境
+      dev_code: result.code // 临时开放给平台内直接反馈给用户
     });
+  }
+);
+
+// ========== 登录认证 ==========
+
+// 登录限频：每IP每10分钟最多10次（防暴力破解）
+const loginLimiter = rateLimit({
+  windowMs: 600000,   // 10分钟
+  maxRequests: 10,
+  blockDuration: 1800000, // 封禁30分钟
+  keyGenerator: (req) => `login:${req.ip}`
+});
+
+/**
+ * 登录接口 — 用 AI-ID + 密码 换取 JWT Token
+ * 修复安全漏洞：之前没有登录接口，仅凭号码就能操作任何账号
+ */
+router.post('/auth/login',
+  loginLimiter,
+  (req, res) => {
+    try {
+      const { axId, ax_id, password } = req.body;
+      const id = axId || ax_id;
+
+      if (!id) return res.status(400).json({ ok: false, error: '请输入爱信号 (AI-ID)' });
+      if (!password) return res.status(400).json({ ok: false, error: '请输入密码' });
+
+      const agent = identity.getAgent(id);
+      if (!agent) return res.status(404).json({ ok: false, error: '爱信号不存在' });
+
+      // 验证密码（目前是明文比对，未来应升级为 bcrypt）
+      if (agent.password !== password) {
+        return res.status(401).json({ ok: false, error: '密码错误' });
+      }
+
+      // 签发 JWT Token
+      const token = signToken(agent.ax_id);
+
+      res.json({
+        ok: true,
+        data: sanitizeAgent(agent),
+        token
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
   }
 );
 
@@ -71,20 +118,37 @@ router.post('/agents',
     try {
       const { email, emailCode, ...rest } = req.body;
 
-      // 邮箱为必填项且验证码必须校验
-      if (!email) {
-        return res.status(400).json({ ok: false, error: '请填写邮箱' });
-      }
-      if (!emailCode) {
-        return res.status(400).json({ ok: false, error: '请填写邮箱验证码' });
-      }
-      const verify = verifyCode(email, emailCode);
-      if (!verify.ok) {
-        return res.status(400).json({ ok: false, error: verify.error, remaining: verify.remaining });
+      // --- 字段名兼容：支持 snake_case (agent_type) 和 camelCase (agentType) ---
+      const agentType = rest.agentType || rest.agent_type || 'personal';
+      const ownerName = rest.ownerName || rest.owner_name || '';
+      const skillTags = rest.skillTags || rest.skill_tags || [];
+      const modelBase = rest.modelBase || rest.model_base || '';
+
+      // --- 密码校验（人类用户注册必须设置密码）---
+      // AI Agent（bot/skill 类型）可以不传密码，由平台颁发 token 认证
+      const isHuman = agentType === 'personal';
+      if (isHuman) {
+        if (!rest.password || rest.password.length < 6) {
+          return res.status(400).json({ ok: false, error: '请设置密码（至少6位）' });
+        }
       }
 
-      const agent = identity.registerAgent({ ...rest, email });
-      res.json({ ok: true, data: sanitizeAgent(agent) });
+      // 如果有传 email 就记录，否则置为带时间戳的随机空邮箱避免碰撞 UNIQUE constraint failed: agents.email
+      const dummyEmail = `nomail_${Date.now()}_${Math.floor(Math.random() * 1000)}@aixin.chat`;
+      const finalEmail = email ? email : dummyEmail;
+
+      const agent = identity.registerAgent({
+        ...rest,
+        agentType,
+        ownerName,
+        skillTags,
+        modelBase,
+        email: finalEmail
+      });
+
+      // 注册成功后自动签发 token，客户端无需再次登录
+      const token = signToken(agent.ax_id);
+      res.json({ ok: true, data: sanitizeAgent(agent), token });
     } catch (e) {
       res.status(400).json({ ok: false, error: e.message });
     }
@@ -97,9 +161,14 @@ router.get('/agents/:axId', (req, res) => {
   res.json({ ok: true, data: sanitizeAgent(agent) });
 });
 
-router.put('/agents/:axId', (req, res) => {
+router.put('/agents/:axId', authMiddleware, (req, res) => {
   try {
-    const agent = identity.updateAgent(decodeURIComponent(req.params.axId), req.body);
+    const axId = decodeURIComponent(req.params.axId);
+    // 只能修改自己的资料
+    if (!isOwner(axId, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权修改他人资料' });
+    }
+    const agent = identity.updateAgent(axId, req.body);
     res.json({ ok: true, data: sanitizeAgent(agent) });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
@@ -130,8 +199,12 @@ router.post('/agents/:axId/rate', (req, res) => {
 
 // ========== 动态/朋友圈 ==========
 
-router.post('/moments', (req, res) => {
+router.post('/moments', authMiddleware, (req, res) => {
   try {
+    // 只能以自己身份发动态
+    if (!isOwner(req.body.axId, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权以他人身份发布动态' });
+    }
     const db = getDb();
     db.prepare('INSERT INTO moments (ax_id, content, moment_type) VALUES (?, ?, ?)').run(req.body.axId, req.body.content, req.body.type || 'update');
     res.json({ ok: true });
@@ -152,8 +225,12 @@ router.get('/moments', (req, res) => {
 
 // ========== 好友/联系人 ==========
 
-router.post('/contacts/request', (req, res) => {
+router.post('/contacts/request', authMiddleware, (req, res) => {
   try {
+    // 只能以自己身份发好友请求
+    if (!isOwner(req.body.from, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权冒充他人发好友请求' });
+    }
     const result = contact.sendFriendRequest(req.body.from, req.body.to);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -161,8 +238,11 @@ router.post('/contacts/request', (req, res) => {
   }
 });
 
-router.post('/contacts/accept', (req, res) => {
+router.post('/contacts/accept', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人的好友请求' });
+    }
     const result = contact.acceptFriendRequest(req.body.owner, req.body.friend);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -170,8 +250,11 @@ router.post('/contacts/accept', (req, res) => {
   }
 });
 
-router.post('/contacts/reject', (req, res) => {
+router.post('/contacts/reject', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人的好友请求' });
+    }
     const result = contact.rejectFriendRequest(req.body.owner, req.body.friend);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -179,24 +262,39 @@ router.post('/contacts/reject', (req, res) => {
   }
 });
 
-router.get('/contacts/:axId/friends', (req, res) => {
-  const friends = contact.getFriends(decodeURIComponent(req.params.axId));
+router.get('/contacts/:axId/friends', authMiddleware, (req, res) => {
+  const axId = decodeURIComponent(req.params.axId);
+  if (!isOwner(axId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人好友列表' });
+  }
+  const friends = contact.getFriends(axId);
   res.json({ ok: true, data: friends.map(sanitizeAgent) });
 });
 
-router.get('/contacts/:axId/pending', (req, res) => {
-  const pending = contact.getPendingRequests(decodeURIComponent(req.params.axId));
+router.get('/contacts/:axId/pending', authMiddleware, (req, res) => {
+  const axId = decodeURIComponent(req.params.axId);
+  if (!isOwner(axId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人待处理请求' });
+  }
+  const pending = contact.getPendingRequests(axId);
   res.json({ ok: true, data: pending });
 });
 
 // 别名：/requests → /pending（兼容不同 Agent 的猜测）
-router.get('/contacts/:axId/requests', (req, res) => {
-  const pending = contact.getPendingRequests(decodeURIComponent(req.params.axId));
+router.get('/contacts/:axId/requests', authMiddleware, (req, res) => {
+  const axId = decodeURIComponent(req.params.axId);
+  if (!isOwner(axId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人待处理请求' });
+  }
+  const pending = contact.getPendingRequests(axId);
   res.json({ ok: true, data: pending });
 });
 
-router.delete('/contacts', (req, res) => {
+router.delete('/contacts', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人的好友关系' });
+    }
     const result = contact.removeFriend(req.body.owner, req.body.friend);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -206,8 +304,12 @@ router.delete('/contacts', (req, res) => {
 
 // ========== 消息 ==========
 
-router.post('/messages', (req, res) => {
+router.post('/messages', authMiddleware, (req, res) => {
   try {
+    // 只能以自己身份发消息
+    if (!isOwner(req.body.from, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权冒充他人发消息' });
+    }
     const msg = messaging.sendMessage(req.body.from, req.body.to, req.body.content, req.body.type);
     res.json({ ok: true, data: msg });
   } catch (e) {
@@ -215,43 +317,67 @@ router.post('/messages', (req, res) => {
   }
 });
 
-router.post('/messages/read', (req, res) => {
+router.post('/messages/read', authMiddleware, (req, res) => {
+  // 只能标记发给自己的消息为已读
+  if (!isOwner(req.body.to, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权操作他人消息' });
+  }
   messaging.markAsRead(req.body.to, req.body.from);
   res.json({ ok: true });
 });
 
 // 注意：unread 必须在 :userId1/:userId2 之前，否则 "unread" 会被当作 userId2
-router.get('/messages/:userId/unread', (req, res) => {
-  const unread = messaging.getUnreadCount(decodeURIComponent(req.params.userId));
+router.get('/messages/:userId/unread', authMiddleware, (req, res) => {
+  const userId = decodeURIComponent(req.params.userId);
+  if (!isOwner(userId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人未读消息' });
+  }
+  const unread = messaging.getUnreadCount(userId);
   res.json({ ok: true, data: unread });
 });
 
 // 未读消息详情（含消息内容）
-router.get('/messages/:userId/unread/details', (req, res) => {
+router.get('/messages/:userId/unread/details', authMiddleware, (req, res) => {
+  const userId = decodeURIComponent(req.params.userId);
+  if (!isOwner(userId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人未读消息' });
+  }
   const { limit } = req.query;
-  const messages = messaging.getUnreadMessages(decodeURIComponent(req.params.userId), parseInt(limit) || 100);
+  const messages = messaging.getUnreadMessages(userId, parseInt(limit) || 100);
   res.json({ ok: true, data: messages });
 });
 
-router.get('/messages/:userId1/:userId2', (req, res) => {
+router.get('/messages/:userId1/:userId2', authMiddleware, (req, res) => {
+  const userId1 = decodeURIComponent(req.params.userId1);
+  // 只能查看与自己相关的聊天记录
+  if (!isOwner(userId1, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人聊天记录' });
+  }
   const { limit, offset } = req.query;
   const history = messaging.getChatHistory(
-    decodeURIComponent(req.params.userId1),
+    userId1,
     decodeURIComponent(req.params.userId2),
     parseInt(limit) || 50, parseInt(offset) || 0
   );
   res.json({ ok: true, data: history });
 });
 
-router.get('/conversations/:userId', (req, res) => {
-  const convs = messaging.getConversations(decodeURIComponent(req.params.userId));
+router.get('/conversations/:userId', authMiddleware, (req, res) => {
+  const userId = decodeURIComponent(req.params.userId);
+  if (!isOwner(userId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人会话列表' });
+  }
+  const convs = messaging.getConversations(userId);
   res.json({ ok: true, data: convs });
 });
 
 // ========== 群组 ==========
 
-router.post('/groups', (req, res) => {
+router.post('/groups', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权以他人身份创建群组' });
+    }
     const group = messaging.createGroup(req.body.name, req.body.owner, req.body.members || []);
     res.json({ ok: true, data: group });
   } catch (e) {
@@ -265,8 +391,11 @@ router.get('/groups/:groupId', (req, res) => {
   res.json({ ok: true, data: group });
 });
 
-router.post('/groups/:groupId/messages', (req, res) => {
+router.post('/groups/:groupId/messages', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.from, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权冒充他人发群消息' });
+    }
     const msg = messaging.sendGroupMessage(req.params.groupId, req.body.from, req.body.content, req.body.type);
     res.json({ ok: true, data: msg });
   } catch (e) {
@@ -287,8 +416,11 @@ router.get('/agents/:axId/groups', (req, res) => {
 
 // ========== 任务委派 ==========
 
-router.post('/tasks', (req, res) => {
+router.post('/tasks', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.from, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权以他人身份创建任务' });
+    }
     const t = task.createTask(req.body.from, req.body.to, req.body);
     res.json({ ok: true, data: t });
   } catch (e) {
@@ -381,8 +513,11 @@ router.get('/skill/stats', (req, res) => {
 
 // ========== 黑名单 ==========
 
-router.post('/blacklist', (req, res) => {
+router.post('/blacklist', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人黑名单' });
+    }
     const result = contact.addToBlacklist(req.body.owner, req.body.blocked, req.body.reason);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -390,8 +525,11 @@ router.post('/blacklist', (req, res) => {
   }
 });
 
-router.delete('/blacklist', (req, res) => {
+router.delete('/blacklist', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人黑名单' });
+    }
     const result = contact.removeFromBlacklist(req.body.owner, req.body.blocked);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -399,15 +537,22 @@ router.delete('/blacklist', (req, res) => {
   }
 });
 
-router.get('/blacklist/:axId', (req, res) => {
-  const list = contact.getBlacklist(decodeURIComponent(req.params.axId));
+router.get('/blacklist/:axId', authMiddleware, (req, res) => {
+  const axId = decodeURIComponent(req.params.axId);
+  if (!isOwner(axId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人黑名单' });
+  }
+  const list = contact.getBlacklist(axId);
   res.json({ ok: true, data: list });
 });
 
 // ========== 自动通过规则 ==========
 
-router.post('/auto-accept', (req, res) => {
+router.post('/auto-accept', authMiddleware, (req, res) => {
   try {
+    if (!isOwner(req.body.owner, req.axId)) {
+      return res.status(403).json({ ok: false, error: '无权操作他人自动通过规则' });
+    }
     const result = contact.setAutoAcceptRule(req.body.owner, req.body.ruleType, req.body.ruleValue, req.body.enabled);
     res.json({ ok: true, data: result });
   } catch (e) {
@@ -415,8 +560,12 @@ router.post('/auto-accept', (req, res) => {
   }
 });
 
-router.get('/auto-accept/:axId', (req, res) => {
-  const rules = contact.getAutoAcceptRules(decodeURIComponent(req.params.axId));
+router.get('/auto-accept/:axId', authMiddleware, (req, res) => {
+  const axId = decodeURIComponent(req.params.axId);
+  if (!isOwner(axId, req.axId)) {
+    return res.status(403).json({ ok: false, error: '无权查看他人自动通过规则' });
+  }
+  const rules = contact.getAutoAcceptRules(axId);
   res.json({ ok: true, data: rules });
 });
 
