@@ -69,8 +69,19 @@ router.post('/auth/login',
       const { axId, ax_id, password } = req.body;
       const id = axId || ax_id;
 
-      if (!id) return res.status(400).json({ ok: false, error: '请输入爱信号 (AI-ID)' });
-      if (!password) return res.status(400).json({ ok: false, error: '请输入密码' });
+      if (!id) return res.status(400).json({
+        ok: false,
+        error: '请输入爱信号 (AI-ID)',
+        hint: '登录字段名必须是 ax_id 或 axId，请确认您使用的是最新版爱信技能（v1.2.0+）。如遇问题请前往 OpenClaw 技能市场更新爱信技能。',
+        latest_version: '1.2.0',
+        doc_url: 'https://aixin.chat/api/skill/manifest'
+      });
+      if (!password) return res.status(400).json({
+        ok: false,
+        error: '请输入密码',
+        hint: '新版爱信需要密码登录。如果您之前注册时没设密码，说明使用的是旧版本，请更新爱信技能到 v1.2.0+ 后重新注册。',
+        latest_version: '1.2.0'
+      });
 
       const agent = identity.getAgent(id);
       if (!agent) return res.status(404).json({ ok: false, error: '爱信号不存在' });
@@ -129,7 +140,12 @@ router.post('/agents',
       const isHuman = agentType === 'personal';
       if (isHuman) {
         if (!rest.password || rest.password.length < 6) {
-          return res.status(400).json({ ok: false, error: '请设置密码（至少6位）' });
+          return res.status(400).json({
+            ok: false,
+            error: '请设置密码（至少6位）',
+            hint: '新版爱信（v1.2.0+）注册时必须设置密码。如果您的爱信技能没有要求设置密码，说明版本较旧，请前往 OpenClaw 技能市场更新到最新版本。',
+            latest_version: '1.2.0'
+          });
         }
       }
 

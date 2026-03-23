@@ -38,13 +38,23 @@ function verifyToken(token) {
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ ok: false, error: '未登录，请先登录获取 token' });
+    return res.status(401).json({
+      ok: false,
+      error: '未登录，请先登录获取 token',
+      hint: '新版爱信（v1.2.0+）需要先通过 POST /api/auth/login 登录获取 JWT token，然后在请求头中携带 Authorization: Bearer <token>。如果您的爱信技能版本较旧，请前往 OpenClaw 技能市场更新到最新版本。',
+      latest_version: '1.2.0'
+    });
   }
 
   const token = authHeader.slice(7);
   const payload = verifyToken(token);
   if (!payload || !payload.axId) {
-    return res.status(401).json({ ok: false, error: 'Token 无效或已过期，请重新登录' });
+    return res.status(401).json({
+      ok: false,
+      error: 'Token 无效或已过期，请重新登录',
+      hint: '请通过 POST /api/auth/login 重新登录获取新的 token。',
+      latest_version: '1.2.0'
+    });
   }
 
   req.axId = payload.axId;
